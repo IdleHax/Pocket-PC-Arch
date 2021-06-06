@@ -1,0 +1,4 @@
+ 
+Warning: 	Replace [CHANGE THIS] with the location of your SD card and make sure you are using the proper location. Failure to do so can result in data loss.
+
+sudo dd if=u-boot-sunxi-with-spl.bin of=/dev/[CHANGE THIS] bs=1024 seek=8 
