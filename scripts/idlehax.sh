@@ -34,8 +34,7 @@ echo 1 # First sector (Accept default: 1)
 echo 4096 # first sector begins after uboot :)
 echo   # Last sector (Accept default: varies)
 echo w # Write changes
-) | sudo fdisk
-sudo fdisk /dev/loop0
+) | sudo fdisk /dev/loop0
 #create ext4 fs on loopback device
 mkfs.ext4 -F /dev/loop0
 mkdir ./root
