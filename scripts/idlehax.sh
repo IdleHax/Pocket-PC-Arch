@@ -53,3 +53,4 @@ dd if=./source/u-boot-sunxi-with-spl.bin of=/dev/loop0 bs=8k seek=1
 #next steps are installing the drivers and arch repo packages.
 #from there we just have to make an iso of the loopback device
 #I used filezilla instead of like, dd to make the .iso last time for some reason, I don't remember why, we cant keep things automatic this way
+# now i remember, I used a physical sd the first time around and filezilla makes "trimming the fat" easy-peasy
