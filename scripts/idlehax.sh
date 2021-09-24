@@ -1,31 +1,106 @@
-#!/bin/bash
+#Check for existance of source files and prompt to download them
+if [ -d "./depends/sourcefiles" ]
+then 
+	echo "Source Files Found";
+	echo -n "Would you like to re-download? (y/n)";
+	read answer
+	if [ "$answer" != "${answer#[Yy]}" ]
+	then
+		./depends/dlsources.sh
+	fi
+else
+	echo "Source Files not found";
+	echo -n "Would you like to download them now? (y/n)";
+	read answer
+    	if [ "$answer" != "${answer#[Yy]}" ]
+    	then
+		./depends/dlsources.sh
+	else
+		exit;
+	fi
 
-# Script to automatically generate an iso for installing to an SD using the latest software available (at least it will lol)
-# Be sure to run this in a new, empty directory each time or it could possibly frag your machine.
-# all modified directories in the script are defined as local to make it harder to break things if you didnt follow the last step...
-# do not run this if you have any mounted loopback devices, it would probably just unmount them first but no point in risking it.
-# you can check this with losetup -a
-# I recommend just running this in a kali vm, since that's what i did (my life is in shambles don't ask why) as all the dependancies are in their repos for sure, and you can't break your system.
-#
-# this was inspired by the work of the Danctnix team, and Danct12
-#
+fi
+#Offer to install dependancies if user hasnt already
+if [ -f "./depends/sourcefiles/installcheck" ]
+then
+	echo "Dependencies check passed, moving on";
+else
+	echo "It does not appear that you have checked for dependencies";
+	echo -n "Would you like to do so now? (y/n)";
+	read answer
+	if [ "$answer" != "${answer#[Yy]}" ]
+	then
+		sudo apt install proot qemu-user-static libarchive-tools git gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+		touch ./depends/sourcefiles/installcheck
+	else
+		exit;
+	fi
+fi
+#check for mountpoint
+if [ -d "./depends/iso_mnt" ]
+then
+	echo "Mountpoint already exists";
+	echo "Checking if it appears to be mounted";
+	if find ./depends/iso_mnt -mindepth 1 -maxdepth 1 | read; then
+		echo "dir appears to already be mounted, attemping to unmount now";
+		sudo umount ./depends/iso_mnt
+		if find ./depends/iso_mnt -mindepth 1 -maxdepth 1 | read; then
+			echo "Unmounting unsuccessful, Try deleting subfolders in depends directory and trying again"
+			echo "Script terminating"
+			exit;
+		else
+			echo "Unmounting successfull, continuing";
+		fi 
+	else
+		echo "Directory does not appear to be mounted, continuing";
+	fi
+else
+	echo "Mountpoint does not yet exist, creating one";
+	mkdir ./depends/iso_mnt
+fi
+# check for loopback devices
+if losetup -a | read; then
+	echo -n "Loopback devices present, remove them and continue? (y/n)";
+	read answer
+    	if [ "$answer" != "${answer#[Yy]}" ]
+    	then
+		sudo losetup -D
+		sudo losetup -D
+		if losetup -a | read; then
+			echo "Could not remove loopback devices, try to remove them manually before restarting";
+			echo "Script will now terminate";
+		else
+			echo "Removal of loopback devices Successful, continuing";
+		fi
+	else
+		exit;
+	fi
+else
+	echo "No loopback devices detected, continuing";
+fi
+#Remove old loopbackfile.img if present, then create a fresh one 
+echo "Searching for old loopback images";
+if [ -f "./depends/loopbackfile.img" ]
+then
+	echo "Old loopback images detected, attempting to remove";
+	sudo rm ./depends/loopbackfile.img
+	if [ -f "./depends/loopbackfile.img" ]
+	then
+		echo "Removal of old loopback images was unsuccessful"
+		echo "It may be mounted, try to delete /depends/iso_mnt/loopbackfile.img manually";
+		echo "Script will now terminate";
+		exit;
 
-#delete source dirs and files to clean up runs, i guess
-sudo rm -rf ./iso_mnt
-sudo rm -rf ./source
-#create a dir if it isnt there
-mkdir -p ./source
-#download if file on server is newer than local, into specified dir
-sudo wget -N http://archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz -P ./source
-#install tools if missing
-sudo apt install proot qemu-user-static bsdtar
-#remove existing loopbacks
-sudo losetup -D
-#create dir for loopback file to live in
-mkdir -p ./iso_mnt
-#create loopback device to get hands dirty
-dd if=/dev/zero of=./iso_mnt/loopbackfile.img bs=1M count=2000
-sudo losetup -fP ./iso_mnt/loopbackfile.img
+	fi
+else 
+	echo "Old images not detected, continuing";
+fi
+#Images if present were removed, creating a new one and partitioning it
+echo "Creating new loopback image";
+dd if=/dev/zero of=./depends/loopbackfile.img bs=1M count=2000
+echo "Mounting image";
+sudo losetup -fP ./depends/loopbackfile.img
+echo "Partioning...";
 (
 echo o # Create a new empty DOS partition table
 echo n # Primary partition
@@ -35,22 +110,11 @@ echo 4096 # first sector begins after uboot :)
 echo   # Last sector (Accept default: varies)
 echo w # Write changes
 ) | sudo fdisk /dev/loop0
-#create ext4 fs on loopback device
-mkfs.ext4 -F /dev/loop0
-mkdir ./root
-sudo mount /dev/loop0 root
-#extract default armv8 image to partitioned loopback device
-bsdtar -xpf ./source/ArchLinuxARM-aarch64-latest.tar.gz -C root
-#Download the boot.scr script for U-Boot and place it in the /boot directory
-sudo wget http://os.archlinuxarm.org/os/allwinner/boot/pine64/boot.scr -O root/boot/boot.scr
-#Unmount the partition
-sudo umount root
-#Download and install the U-Boot bootloader (points to generic non-PocketPC uboot right this second)
-sudo wget -N http://os.archlinuxarm.org/os/allwinner/boot/pine64/u-boot-sunxi-with-spl.bin -P ./source
-dd if=./source/u-boot-sunxi-with-spl.bin of=/dev/loop0 bs=8k seek=1
-#from here we have to chroot into our loopback device and complete the setup as listed here https://archlinuxarm.org/platforms/armv8/allwinner/pine64
-#a guide to the chroot process lives here https://archlinuxarm.org/forum/viewtopic.php?f=30&t=9294
-#next steps are installing the drivers and arch repo packages.
-#from there we just have to make an iso of the loopback device
-#I used filezilla instead of like, dd to make the .iso last time for some reason, I don't remember why, we cant keep things automatic this way
-# now i remember, I used a physical sd the first time around and filezilla makes "trimming the fat" easy-peasy
+echo "Formatting partition as ext4...";
+sudo mkfs.ext4 -F /dev/loop0p1
+#Build Uboot with ATF
+echo "Building Arm-Trusted-Firmware";
+./depends/sourcefiles/arm-trusted-firmware-2.5/atfbuild.sh
+#install uboot binary
+echo "Mounting filesystem partion..."
+#sudo mount -o /dev/loop0p1 ./depends/iso_mnt
